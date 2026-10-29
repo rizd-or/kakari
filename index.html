@@ -286,6 +286,7 @@ table.grid tr.bad td{background:color-mix(in srgb,var(--bad) 8%,transparent)}
 .reqrow{display:flex;gap:4px;align-items:center;margin-bottom:3px}
 .reqrow select{max-width:90px}.reqrow input{width:50px}
 .chipsline{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.clearbox{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:12px}
 .drop{border:2px dashed var(--line2);border-radius:16px;padding:26px;text-align:center;background:var(--panel2)}
 .cmapgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
 .cmapgrid label{display:flex;flex-direction:column;font-size:12px;color:var(--sub);gap:3px}
@@ -1273,7 +1274,7 @@ function settingsMembers() {
   const q = nz(ui.memQ);
   const list = state.members.filter(m => !q || nz(m.name + m.nick).includes(q));
   const ro = v => `<option value="">—</option>` + state.roles.map(r => `<option value="${r.id}" ${r.id === v ? 'selected' : ''}>${esc(short(r.name))}</option>`).join('');
-  return `<div class="chipsline" style="margin-bottom:8px"><b>${state.members.length}人</b><input type="search" id="memQ" placeholder="名前で絞り込み" value="${esc(ui.memQ)}"><button class="btn" data-act="memAdd">＋ メンバーを追加</button></div>
+  return `<div class="chipsline" style="margin-bottom:8px"><b>${state.members.length}人</b>${state.members.length ? '<button class="btn sm danger" data-act="clearMembers">全員外す</button>' : ''}<input type="search" id="memQ" placeholder="名前で絞り込み" value="${esc(ui.memQ)}"><button class="btn" data-act="memAdd">＋ メンバーを追加</button></div>
   <div class="tablebox"><table class="grid"><thead><tr><th>名前</th><th>あだ名</th>${[1, 2, 3, 4, 5].map(i => `<th>第${i}</th>`).join('')}<th>担当数</th><th>兼任</th><th>性別</th><th>属性</th><th>メモ</th><th></th></tr></thead><tbody>
   ${list.map(m => `<tr><td><input type="text" data-mfield="name" data-mid="${m.id}" value="${esc(m.name)}"></td><td><input type="text" data-mfield="nick" data-mid="${m.id}" value="${esc(m.nick)}" style="width:80px"></td>
     ${m.prefs.map((p, i) => `<td><select data-mpref="${i}" data-mid="${m.id}">${ro(p)}</select></td>`).join('')}
@@ -1357,7 +1358,8 @@ async function readFileText(file) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { return new TextDecoder('shift_jis').decode(buf); }
 }
 function settingsCsv() {
-  if (!csvCtx) return `<div class="drop"><p><b>GoogleフォームのCSVを読み込みます</b></p><p class="note">フォームの「回答」タブ → ︙ → 「回答をダウンロード（.csv）」で保存したファイルを選んでください。</p>
+  const clearBox = state.members.length ? `<div class="clearbox"><div><b>今読み込まれているメンバー：${state.members.length}人</b><div class="note">ダミーデータを消したいときや、最初から読み込み直したいときに使います。</div></div><button class="btn danger" data-act="clearMembers">読み込んだメンバーを外す</button></div>` : '';
+  if (!csvCtx) return clearBox + `<div class="drop"><p><b>GoogleフォームのCSVを読み込みます</b></p><p class="note">フォームの「回答」タブ → ︙ → 「回答をダウンロード（.csv）」で保存したファイルを選んでください。</p>
     <input type="file" accept=".csv,text/csv" data-csvfile></div>
     <details style="margin-top:12px"><summary>対応しているフォームの形</summary><ul class="note">
     <li><b>質問を5つに分ける形</b>：「第1希望」〜「第5希望」の質問（プルダウン等）で、答えが係名。</li>
@@ -1656,6 +1658,16 @@ document.addEventListener('click', async e => {
       state.members = state.members.filter(x => x !== m); [state.live, ...state.sims].forEach(c => delete c.assignments[m.id]); save(); render(); renderSettings(); break;
     }
     case 'csvReset': csvCtx = null; renderSettings(); break;
+    case 'clearMembers': {
+      const n = state.members.length; if (!n) break;
+      if (!await confirmDlg({ title: '読み込んだメンバーを外しますか？', body: `メンバー${n}人と、本番・シミュレーションの配属がすべて消えます。<br>係・定員・係説明・ルールはそのまま残ります。<br><span class="note">直前の状態は「バックアップ・期」のスナップショットに残るので、そこから戻せます。</span>`, ok: `${n}人を外す`, danger: true })) break;
+      snapshot(`メンバー${n}人を外す前`);
+      state.members = []; state.live.assignments = {}; state.live.batches = []; state.live.locked = false;
+      state.sims.forEach(x => { x.assignments = {}; x.batches = []; });
+      Object.keys(hist).forEach(k => delete hist[k]); ui.selected = null; ui.filterRole = null; csvCtx = null;
+      addLog(`読み込んだメンバー${n}人を外した`); save(); render(); renderSettings(); toast(`${n}人を外しました`);
+      break;
+    }
     case 'csvImport': doImport(d.mode); break;
     case 'backupDl': downloadBackup(); break;
     case 'restorePick': $('[data-restorefile]').click(); break;
